@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Ubi-Interact Physical Embodiment Evaluator</title>
+</head>
+
+<body>
+    <h1>Ubi-Interact Physical Embodiment Evaluator</h1>
+
+    <style>
+        html,
+        body,
+        .main {
+            font-family: Arial, Helvetica, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .control,
+        .control>*:not(button):not(span) {
+            display: grid;
+            column-gap: 10px;
+            row-gap: 10px;
+        }
+
+        .control {
+            padding: 10px;
+            border: 2px solid black;
+            border-radius: 5px;
+            grid-template-columns: 1fr 1fr;
+            max-width: 750px;
+        }
+
+        .control>*:not(button) {
+            grid-template-columns: 2fr 3fr;
+        }
+
+        button {
+            border: 1px solid black;
+            background-color: lightgray;
+            border-radius: 3px;
+        }
+
+        @media screen and (max-width: 600px) {
+            .control {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+
+    <div class="control">
+        <label>
+            <span>Service URL</span>
+            <input type="text" class="service-url" placeholder="http://localhost:8102/services">
+        </label>
+        <label>
+            <span>Topic data URL</span>
+            <input type="text" class="topic-data-url" placeholder="ws://localhost:8104/topicdata">
+        </label>
+        <label>
+            <span>Topic A tags</span>
+            <input type="text" class="topic-A" placeholder="ik targets">
+        </label>
+        <label>
+            <span>Topic B tags</span>
+            <input type="text" class="topic-B" placeholder="avatar, bones, pose, position, orientation, quaternion">
+        </label>
+        <label>
+            <span>Show output (potentially bad performance!)</span>
+            <input type="checkbox" class="show-output">
+        </label>
+        <span></span>
+        <button onClick="start()" class="start">Start</button>
+        <button onClick="stop()">Stop</button>
+    </div>
+
+    <div class="console-info" style="margin: 50px 0 40px; max-width: 750px; font-style: italic; text-align: center; display: none;">
+        Press Ctrl+Shift+I to open console with result JSON.
+    </div>
+
+    <div class="main">
+        <h2>Last published poses</h2>
+        <h3>Whole pose</h3>
+        <div class="control">
+            <span>&oslash; &delta; position</span>
+            <div class="delta-position">(no value)</div>
+            <span>&oslash; &delta; position X</span>
+            <div class="delta-position-x">(no value)</div>
+            <span>&oslash; &delta; position Y</span>
+            <div class="delta-position-y">(no value)</div>
+            <span>&oslash; &delta; position Z</span>
+            <div class="delta-position-z">(no value)</div>
+            <span>&delta; time</span>
+            <div class="delta-time">(no value)</div>
+        </div>
+    </div>
+
+
+    <footer style="margin-top: 50px; max-width: 750px; font-style: italic; text-align: center;">
+        This interface demonstrates the use of the <a
+            href="https://www.github.com/goldst/ubii-web-target-publisher">Ubi-Interact Physical Embodiment Evaluator for web
+            browsers</a>. The evaluator records pose data from two different sources (eg. one input source and one recreated source). This can be used to test how well a physical embodiment implementation works in comparison to another one. To use this demo, a running instance of <a href="https://github.com/SandroWeber/ubii-node-master">ubii-node-master</a> and of the whole Physical Embodiment process, such as <a href="https://github.com/SandroWeber/ubii-vr-physics-embodiment-unity">ubii-vr-physics-embodiment-unity</a> or <a href="https://github.com/SandroWeber/ubii-vr-physics-embodiment-babylonjs">ubii-vr-physics-embodiment-babylonjs</a> is required.
+    </footer>
+
+    <script src="./bundle.js"></script>
+    <script>
+        let evaluator;
+        const serviceURLInput = document.querySelector('.service-url');
+        const topicDataURLInput = document.querySelector('.topic-data-url');
+        const topicAInput = document.querySelector('.topic-A');
+        const topicBInput = document.querySelector('.topic-B');
+        const showOutput = document.querySelector('.show-output');
+
+        const mainArea = document.querySelector('.main');
+        const buttonStart = document.querySelector('.start');
+        const consoleInfo = document.querySelector('.console-info');
+        const poses = [
+            'Hips', 'LeftUpperLeg', 'RightUpperLeg',
+            'LeftLowerLeg', 'RightLowerLeg',
+            'LeftFoot', 'RightFoot', 'Spine', 'Chest',
+            'Neck', 'Head', 'LeftShoulder',
+            'RightShoulder', 'LeftUpperArm',
+            'RightUpperArm', 'LeftLowerArm',
+            'RightLowerArm', 'LeftHand', 'RightHand',
+            'LeftToes', 'RightToes', 'LeftThumbProximal',
+            'LeftThumbIntermediate', 'LeftThumbDistal',
+            'LeftIndexProximal', 'LeftIndexIntermediate',
+            'LeftIndexDistal', 'LeftMiddleProximal',
+            'LeftMiddleIntermediate', 'LeftMiddleDistal',
+            'LeftRingProximal', 'LeftRingIntermediate',
+            'LeftRingDistal', 'LeftLittleProximal',
+            'LeftLittleIntermediate', 'LeftLittleDistal',
+            'RightThumbProximal', 'RightThumbIntermediate',
+            'RightThumbDistal', 'RightIndexProximal',
+            'RightIndexIntermediate', 'RightIndexDistal',
+            'RightMiddleProximal', 'RightMiddleIntermediate',
+            'RightMiddleDistal', 'RightRingProximal',
+            'RightRingIntermediate', 'RightRingDistal',
+            'RightLittleProximal', 'RightLittleIntermediate',
+            'RightLittleDistal', 'UpperChest'
+        ];
+        const targetMappings = {
+            HEAD: 'Head',
+            HIP: 'Hips',
+            HAND_LEFT: 'LeftHand',
+            HAND_RIGHT: 'RightHand',
+            FOOT_LEFT: 'LeftFoot',
+            FOOT_RIGHT: 'RightFoot'
+        }
+
+        const poseAElements = {}
+        const poseBElements = {}
+        const deltaElements = {}
+        const deltaXElements = {}
+        const deltaYElements = {}
+        const deltaZElements = {}
+        poses.forEach(pose => {
+            mainArea.innerHTML +=
+                `<h3>${pose}</h3>
+                <div class="control">
+                    <span>Version A</span>
+                    <div class="pose-A-${pose}">(no value)</div>
+                    <span>Version B</span>
+                    <div class="pose-B-${pose}">(no value)</div>
+                    <span>&delta; position</span>
+                    <div class="delta-${pose}">(no value)</div>
+                    <span>&delta; position X</span>
+                    <div class="delta-x-${pose}">(no value)</div>
+                    <span>&delta; position Y</span>
+                    <div class="delta-y-${pose}">(no value)</div>
+                    <span>&delta; position Z</span>
+                    <div class="delta-z-${pose}">(no value)</div>
+                </div>`;
+        });
+        poses.forEach(pose => {
+            poseAElements[pose] = document.querySelector(`.pose-A-${pose}`);
+            poseBElements[pose] = document.querySelector(`.pose-B-${pose}`);
+            deltaElements[pose] = document.querySelector(`.delta-${pose}`);
+            deltaXElements[pose] = document.querySelector(`.delta-x-${pose}`);
+            deltaYElements[pose] = document.querySelector(`.delta-y-${pose}`);
+            deltaZElements[pose] = document.querySelector(`.delta-z-${pose}`);
+        });
+
+        function start() {
+            buttonStart.style.backgroundColor = 'green';
+
+            evaluator = new UbiiPEStepEvaluation.Evaluator({
+                urlServices: serviceURLInput.value || 'http://localhost:8102/services/json',
+                urlTopicData: topicDataURLInput.value || 'ws://localhost:8104/topicdata',
+                topicATags: topicAInput.value?.length 
+                    ? topicAInput.value?.split(',').map(t => t.trim())
+                    : ['ik targets'],
+                topicBTags: topicBInput.value?.length
+                    ? topicBInput.value.split(',').map(t => t.trim())
+                    : ['avatar', 'bones', 'pose', 'position', 'orientation', 'quaternion'],
+                onNewData: logNewData
+            });
+        }
+
+        function stop() {
+            buttonStart.style.backgroundColor = 'lightgray';
+            consoleInfo.style.display = 'block';
+            evaluator?.stop();
+        }
+
+        function logNewData(data) {
+            if(!showOutput.checked) {
+                return;
+            }
+
+            data.A.forEach(elementA => {
+                const idA = targetMappings[elementA.id] || elementA.id;
+
+                const elementB = data.B.find(b => (targetMappings[b.id] || b.id) === idA);
+
+                if(!poseAElements[idA]) {
+                    return;
+                }
+                
+                poseAElements[idA].innerHTML = `
+                    <code>pos x</code><code>${elementA.pose.position.x.toFixed(9)}</code>
+                    <code>pos y</code><code>${elementA.pose.position.y.toFixed(9)}</code>
+                    <code>pos z</code><code>${elementA.pose.position.z.toFixed(9)}</code>
+                    <code>quat x</code><code>${elementA.pose.quaternion.x.toFixed(9)}</code>
+                    <code>quat y</code><code>${elementA.pose.quaternion.y.toFixed(9)}</code>
+                    <code>quat z</code><code>${elementA.pose.quaternion.z.toFixed(9)}</code>
+                    <code>quat w</code><code>${elementA.pose.quaternion.w.toFixed(9)}</code>
+                `;
+
+                const idB = targetMappings[elementB.id] || elementB.id;
+
+                if(!elementB || !poseBElements[idB]) {
+                    return;
+                }
+                
+                poseBElements[idB].innerHTML = `
+                    <code>pos x</code><code>${elementB.pose.position.x.toFixed(9)}</code>
+                    <code>pos y</code><code>${elementB.pose.position.y.toFixed(9)}</code>
+                    <code>pos z</code><code>${elementB.pose.position.z.toFixed(9)}</code>
+                    <code>quat x</code><code>${elementB.pose.quaternion.x.toFixed(9)}</code>
+                    <code>quat y</code><code>${elementB.pose.quaternion.y.toFixed(9)}</code>
+                    <code>quat z</code><code>${elementB.pose.quaternion.z.toFixed(9)}</code>
+                    <code>quat w</code><code>${elementB.pose.quaternion.w.toFixed(9)}</code>
+                `;
+
+                deltaElements[idA].innerHTML = `
+                    <code>${Math.sqrt(
+                        (elementB.pose.position.x - elementA.pose.position.x) ** 2,
+                        (elementB.pose.position.y - elementA.pose.position.y) ** 2,
+                        (elementB.pose.position.z - elementA.pose.position.z) ** 2
+                    )}</code>
+                `;
+
+                deltaXElements[idA].innerHTML = `
+                    <code>${elementB.pose.position.x - elementA.pose.position.x}</code>
+                `;
+
+                deltaYElements[idA].innerHTML = `
+                    <code>${elementB.pose.position.y - elementA.pose.position.y}</code>
+                `;
+
+                deltaZElements[idA].innerHTML = `
+                    <code>${elementB.pose.position.y - elementA.pose.position.y}</code>
+                `;
+            });
+            
+        }
+    </script>
+
+</body>
+
+</html>
