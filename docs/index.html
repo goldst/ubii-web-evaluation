@@ -116,7 +116,7 @@
         function start() {
             buttonStart.style.backgroundColor = 'green';
 
-            evaluator = new UbiiPEStepEvaluation.Evaluator({
+            evaluator = new UbiiPEEvaluation.Evaluator({
                 urlServices: serviceURLInput.value || 'http://localhost:8102/services/json',
                 urlTopicData: topicDataURLInput.value || 'ws://localhost:8104/topicdata',
                 topicATags: topicAInput.value?.length 
